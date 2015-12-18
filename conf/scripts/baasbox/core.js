@@ -26,13 +26,13 @@
  * Baasbox server version
  * @type {string}
  */
-exports.version = '0.9.4';
+exports.version = __getBaasBoxVersion(); //defined in _baasbox_prelude.js
 
 
 //-------- WS (Remote API calls) --------
 
 var WS = {};
-var wsRequest = function(method,url,body,params,headers){
+var wsRequest = function(method,url,body,params,headers,timeout){
     return _command({resource: 'script',
                      name: 'ws',
                      params: {
@@ -40,45 +40,48 @@ var wsRequest = function(method,url,body,params,headers){
                          method: method,
                          params: params,
                          headers: headers,
-                         body: body
+                         body: body,
+                         timeout:timeout
                      }});
 };
 
 WS.post = function(url,body,opts){
     opts =opts||{};
-    return wsRequest('post',url,body,opts.params,opts.headers);
+    return wsRequest('post',url,body,opts.params,opts.headers,opts.timeout);
 };
 
 WS.get = function(url,opts){
     opts=opts||{};
-    return wsRequest('get',url,null,opts.params,opts.headers);
+    return wsRequest('get',url,null,opts.params,opts.headers,opts.timeout);
 };
 
 WS.put = function(url,body,opts){
     opts = opts||{};
-    return wsRequest('put',url,body,opts.params,opts.headers);
+    return wsRequest('put',url,body,opts.params,opts.headers,opts.timeout);
 };
 
 
 WS.delete = function(url,opts){
     opts = opts||{};
-    return wsRequest('delete',url,null,opts.params,opts.headers);
+    return wsRequest('delete',url,null,opts.params,opts.headers,opts.timeout);
 };
 //-------- END WS --------
 
 
 
 var log = function(){
-    if (arguments.length < 1){
-        return;
-    }
-
-    var message = arguments[0];
-    var args = Array.prototype.slice.call(arguments,1);
-
-    _command({resource: 'script',
-              name: 'log',
-              params: {message: message,args:args}});
+	if (isLoggingActive()) {
+	    if (arguments.length < 1){
+	        return;
+	    }
+	
+	    var message = arguments[0];
+	    var args = Array.prototype.slice.call(arguments,1);
+	
+	    _command({resource: 'script',
+	              name: 'log',
+	              params: {message: message,args:args}});
+	}
 
 };
 
