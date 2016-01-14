@@ -26,13 +26,13 @@
  * Baasbox server version
  * @type {string}
  */
-exports.version = '0.9.0';
+exports.version = __getBaasBoxVersion(); //defined in _baasbox_prelude.js
 
 
 //-------- WS (Remote API calls) --------
 
 var WS = {};
-var wsRequest = function(method,url,body,params,headers){
+var wsRequest = function(method,url,body,params,headers,timeout){
     return _command({resource: 'script',
                      name: 'ws',
                      params: {
@@ -40,45 +40,48 @@ var wsRequest = function(method,url,body,params,headers){
                          method: method,
                          params: params,
                          headers: headers,
-                         body: body
+                         body: body,
+                         timeout:timeout
                      }});
 };
 
 WS.post = function(url,body,opts){
     opts =opts||{};
-    return wsRequest('post',url,body,opts.params,opts.headers);
+    return wsRequest('post',url,body,opts.params,opts.headers,opts.timeout);
 };
 
 WS.get = function(url,opts){
     opts=opts||{};
-    return wsRequest('get',url,null,opts.params,opts.headers);
+    return wsRequest('get',url,null,opts.params,opts.headers,opts.timeout);
 };
 
 WS.put = function(url,body,opts){
     opts = opts||{};
-    return wsRequest('put',url,body,opts.params,opts.headers);
+    return wsRequest('put',url,body,opts.params,opts.headers,opts.timeout);
 };
 
 
 WS.delete = function(url,opts){
     opts = opts||{};
-    return wsRequest('delete',url,null,opts.params,opts.headers);
+    return wsRequest('delete',url,null,opts.params,opts.headers,opts.timeout);
 };
 //-------- END WS --------
 
 
 
-var log = function(msg){
-    var message;
-    if(typeof msg === 'string'){
-        message = msg;
-    } else {
-        message = JSON.stringify(msg);
-    }
-
-    _command({resource: 'script',
-              name: 'log',
-              params: message});
+var log = function(){
+	if (isLoggingActive()) {
+	    if (arguments.length < 1){
+	        return;
+	    }
+	
+	    var message = arguments[0];
+	    var args = Array.prototype.slice.call(arguments,1);
+	
+	    _command({resource: 'script',
+	              name: 'log',
+	              params: {message: message,args:args}});
+	}
 
 };
 
@@ -112,6 +115,38 @@ DB.commit = function(){
 DB.rollback = function(){
     _command({resource: 'db', name: 'rollbackTransaction'});
     return null;
+};
+
+
+DB.select = function(query,array_of_params,depth){
+	if(! (typeof query === 'string')){
+		 throw new TypeError("missing query statement");
+	}
+	if(array_of_params && !(Object.prototype.toString.apply(array_of_params) === '[object Array]')){
+        throw new TypeError("second parameter must be an array. It is " + Object.prototype.toString.apply(array_of_params));
+    }
+	return _command({resource: 'db',
+        name: 'select',
+        params: {query:query,
+        	array_of_params:array_of_params,
+        	depth:depth
+        }
+	});
+};
+
+DB.exec = function(query,array_of_params){
+	if(! (typeof query === 'string')){
+		 throw new TypeError("missing statement to execute");
+	}
+	if(array_of_params && !(Object.prototype.toString.apply(array_of_params) === '[object Array]')){
+        throw new TypeError("second parameter must be an array. It is " + Object.prototype.toString.apply(array_of_params));
+    }
+	return _command({resource: 'db',
+        name: 'exec',
+        params: {statement:query,
+        	array_of_params:array_of_params
+        }
+	});
 };
 
 var ABORT  = Object.create(null);
@@ -171,6 +206,8 @@ DB.ensureCollection = function(name){
         return true;
     }
 };
+
+
 //-------- END DB --------
 
 
@@ -284,10 +321,12 @@ Users.create = function(){
         visibleByAnonymousUsers,
         visibleByRegisteredUsers,
         visibleByTheUser,
-        visibleByFriends;
+        visibleByFriends,
+        id;
     usr = pass = role = visibleByAnonymousUsers =
-        visibleByFriends = visibleByTheUser = visibleByRegisteredUsers = null;
+        visibleByFriends = visibleByTheUser = visibleByRegisteredUsers = id = null;
     switch (arguments.length){
+    	case 5: id = arguments[4];
         case 4:
             visibleByFriends = arguments[3].visibleByFriends;
             visibleByRegisteredUsers= arguments[3].visibleByRegisteredUsers;
@@ -312,6 +351,7 @@ Users.create = function(){
                      params: {username: usr,
                               password: pass,
                               role: role,
+                              id:id,
                               visibleByTheUser: visibleByTheUser,
                               visibleByAnonymousUsers: visibleByAnonymousUsers,
                               visibleByRegisteredUsers: visibleByRegisteredUsers,
@@ -322,6 +362,17 @@ Users.me = function(){
     return Users.find(context.userName);
 };
 
+Users.remove = function(username){
+	return _command({resource: 'users',
+        name: 'delete',
+        params: {
+        	username:username
+        }
+    });
+};
+
+
+
 Users.save = function(uzr){
     var upd = {};
     if(arguments.length == 1 && typeof arguments[0] === 'object') {
@@ -329,11 +380,15 @@ Users.save = function(uzr){
         upd.visibleByAnonymousUsers = uzr.visibleByAnonymousUsers;
         upd.visibleByRegisteredUsers = uzr.visibleByRegisteredUsers;
         upd.visibleByTheUser = uzr.visibleByTheUser;
-
+        if (uzr.hasOwnProperty('id')) upd.id=uzr.id;
         if(isAdmin()) {
+        	//admin can update any user
             upd.username = uzr.username;
-
+            //admin can update the role as well
+            upd.role = uzr.role;
         } else {
+        	if (uzr.role!=null) throw new TypeError("Only administrators can update a user role");
+        	if (uzr.username!=null && uzr.username!==context.userName) throw new TypeError("Users can update only their own profiles");
             upd.username = context.userName;
         }
 
@@ -346,11 +401,137 @@ Users.save = function(uzr){
         throw new TypeError("you must supply a user to save");
     }
 };
+
+/*
+ * Users.changePassword(username,newpass);
+ */
+Users.changePassword = function(username,password){
+	if (arguments.length!=2) throw new TypeError("Users.changePassword() needs 2 arguments");
+	if(!isAdmin() && context.userName!=username) {
+		throw new TypeError("You have to be an administrator to change someone else password");
+	} 
+    return _command({resource: 'users',
+        name: 'changePassword',
+        params: {
+        	username:username,
+        	newPassword:password
+        }
+    });
+};
+
+/*
+ * Users.changeUsername(username,newUsername);
+ */
+Users.changeUsername = function(username,newUsername){
+	if (arguments.length!=2) throw new TypeError("Users.changeUsername() needs 2 arguments");
+	if(!isAdmin() && context.userName!=username) {
+		throw new TypeError("You have to be an administrator to change someone else username");
+	} 
+    return _command({resource: 'users',
+        name: 'changeUsername',
+        params: {
+        	username:username,
+        	newUsername:newUsername
+        }
+    });
+};
 //-------- END Users --------
 
+//-------- Sessions ---------
+var Sessions = {};
+Sessions.find = function(){
+	var username=null;
+	switch (arguments.length){
+	 case 1:
+		 username=arguments[0];
+		 break;
+	}
+	if (username==null){
+		throw new TypeError("you must specify a username");
+	}
+	if(!(typeof username === 'string')){
+        throw new TypeError("the parameter must be a string");
+    }
+	if (username!==context.userName && !isAdmin()){
+		throw new TypeError("only administrators can read the sessions of other users");
+	}
+	return _command({resource: 'sessions',
+        name: 'list',
+        params:{
+            username: username
+        }});
+};
+
+Sessions.revokeAll = function(){
+	var username=null;
+	switch (arguments.length){
+	 case 1:
+		 username=arguments[0];
+		 break;
+	}
+	if (username==null){
+		throw new TypeError("you must specify a username");
+	}
+	if(!(typeof username === 'string')){
+        throw new TypeError("the parameter must be a string");
+    }
+	if (username!==context.userName && !isAdmin()){
+		throw new TypeError("only administrators can revoke the sessions of other users");
+	}
+	return _command({resource: 'sessions',
+        name: 'revokeAllTokensOfAGivenUser',
+        params:{
+            username: username
+        }});	
+};
+
+Sessions.revoke = function(){
+	var token=null;
+	switch (arguments.length){
+	 case 1:
+		 token=arguments[0];
+		 break;
+	}
+	if (token==null){
+		throw new TypeError("you must specify a token to revoke");
+	}
+	if(!(typeof token === 'string')){
+        throw new TypeError("the parameter must be a string");
+    }
+	if (!isAdmin()){
+		throw new TypeError("only administrators can revoke a session");
+	}
+	return _command({resource: 'sessions',
+        name: 'delete',
+        params:{
+            token: token
+        }});	
+};
+
+Sessions.getCurrent = function (){
+	return _command({resource: 'sessions',
+        name: 'getCurrent'
+	});
+}
+
+Sessions.create = function(username,password){
+	if(!(typeof username === 'string')){
+        throw new TypeError("the username parameter must be a string");
+    }
+	if(!(typeof password === 'string')){
+        throw new TypeError("the password parameter must be a string");
+    }
+	return _command({resource: 'sessions',
+        name: 'post',
+        params:{
+            username: username,
+            password:password
+        }});	
+} 
 
 //--------   Documents --------
 var Documents = {};
+
 Documents.find = function(){
     var coll = null,
         q = null,
@@ -394,7 +575,7 @@ Documents.remove = function(coll,id){
                      name: 'delete',
                      params: {
 
-                         collection: 'collection',
+                         collection: coll,
                          id: id
                      }});
 };
@@ -472,6 +653,29 @@ Documents.save = function(){
 };
 
 //-------- End Documents --------
+
+//-------- Documents Links ------
+var dLinks = {};
+dLinks.find = function(collectionName,id,params){
+	 var coll = collectionName,
+     queryLink = params.links;
+	 if(!coll || !(typeof coll === 'string')){
+	        throw new TypeError("you must specify a collection");
+	    }
+	 if(!id || !(typeof id === 'string')){
+	        throw new TypeError("you must specify an id");
+	    }
+	 return _command({resource: 'documents',
+         name: 'get',
+         params:{
+             collection: coll,
+             id: id,
+             links:queryLink
+         }});
+	 
+}
+Documents.Links = dLinks;
+//----- End Documents Links ------
 
 var queryUsers = function(to){
     var ret = [];
@@ -613,6 +817,70 @@ Links.save = function(params){
   
 };
 //---------- END Links ------
+//---------- CACHE ----------
+var Cache = {};
+
+var DEFAULT_CALLBACK = function(key){
+	return null;
+}
+var validCacheScope = function(cacheScope){
+	return cacheScope && (cacheScope == 'app' || cacheScope == 'user')
+}
+var validateCacheParams = function(methodName,cacheScope,key){
+	var printInfo = function(){
+		return "cacheScope:"+cacheScope + " key: "+ key;
+	}
+	if(!cacheScope || !validCacheScope(cacheScope) ){
+		throw new TypeError("Invalid arguments:"+methodName +" needs a scope string param that should be either app or user.Info:"+ printInfo()); 
+	}
+	if(!key){
+		throw new TypeError("Invalid arguments: "+methodName +" needs a string param representing the key of your cache value.Info:"+printInfo()); 
+	}
+}
+Cache.set = function(key,obj,params){
+	var cacheScope = params.scope || 'user';
+	validateCacheParams("setValue()",cacheScope,key);
+	var ttl = 3600;
+	if(params.ttl && !isNaN(params.ttl)){
+		ttl = params.ttl;
+	}
+	setValueInCache(cacheScope,key,obj,ttl);
+	return obj;
+}
+
+Cache.get = function(key,cacheScope){
+	if(!cacheScope){
+		cacheScope = 'user';
+	}
+	validateCacheParams("get",cacheScope,key);
+	return getValueFromCache(cacheScope,key);
+}
+
+Cache.remove = function(key,params){
+	var cacheScope = params.scope || 'user';
+	validateCacheParams("remove()",cacheScope,key);
+	removeValueFromCache(cacheScope,key);
+	return ;
+	
+}
+
+Cache.getOrElse = function(key,params){
+	var cacheScope = params.scope || 'user';
+	var inCache = this.get(key,cacheScope);
+	var callback = params.callback || DEFAULT_CALLBACK;
+	if(!inCache){
+		return callback(key);
+	}else{
+		return inCache;
+	}
+};
+//---------- END Cache ------
+
+//---------- UTILS --------
+var Utils = {}
+Utils.stringify=function(obj){
+	return JSON.stringify(obj);
+}
 
 exports.Documents = Documents;
 exports.Users = Users;
@@ -621,6 +889,10 @@ exports.Push = Push;
 exports.WS= WS;
 exports.log = log;
 exports.Links = Links;
+exports.Sessions = Sessions;
+exports.Utils = Utils;
+exports.Cache = Cache;
+
 
 exports.runAsAdmin=runAsAdmin;
 

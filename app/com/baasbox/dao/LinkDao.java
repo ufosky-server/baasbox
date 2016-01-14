@@ -22,7 +22,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.UUID;
 
-import play.Logger;
+import com.baasbox.service.logging.BaasBoxLogger;
 
 import com.baasbox.dao.exception.DocumentNotFoundException;
 import com.baasbox.dao.exception.SqlInjectionException;
@@ -30,6 +30,7 @@ import com.baasbox.db.DbHelper;
 import com.baasbox.service.storage.BaasBoxPrivateFields;
 import com.baasbox.service.storage.StorageUtils;
 import com.baasbox.util.QueryParams;
+import com.orientechnologies.orient.core.command.OCommandRequest;
 import com.orientechnologies.orient.core.db.record.ODatabaseRecordTx;
 import com.orientechnologies.orient.core.id.ORID;
 import com.orientechnologies.orient.core.index.OIndex;
@@ -90,7 +91,8 @@ public class LinkDao {
 
 	public void deleteLink(String linkId) {
 		ORID linkRid = getRidLinkByUUID(linkId);
-		DbHelper.getConnection().delete(linkRid);
+		OCommandRequest command = DbHelper.genericSQLStatementCommandBuilder("delete edge " + linkRid);
+		DbHelper.genericSQLCommandExecute(command, null);
 	}
 	
 	/***

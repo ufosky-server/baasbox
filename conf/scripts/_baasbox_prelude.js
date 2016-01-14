@@ -161,9 +161,10 @@ var GLOBAL=this;
                 var cb =(typeof command.callback === 'function')
                             ? new JsJsonCallback(command.callback,m,JSON)
                             : null;
-                Internal.log("callback: "+ (cb != null));
-                Internal.log("command "+JSON.stringify(command));
-                var resp = Api.execCommand(JSON.stringify(command),cb);
+                var cmdToExec=JSON.stringify(command);
+                Internal.log("callback: " + (cb != null));
+                Internal.log("command: " + cmdToExec);
+                var resp = Api.execCommand(cmdToExec,cb);
                 if (resp === null|| resp === undefined) {
                     return null;
                 }
@@ -222,6 +223,10 @@ var GLOBAL=this;
 
     Module.prototype.BaasBoxError=BaasBoxError;
 
+    Module.prototype.__getBaasBoxVersion = function (){
+    	return Api.getBaasBoxVersion();
+    }
+    Object.defineProperty(Module.prototype,"__getBaasBoxVersion",{configurable: false,enumerable: false});
 
     /**
      * The require function
@@ -230,25 +235,52 @@ var GLOBAL=this;
      */
     Module.prototype.require = function(name){
         if (typeof name !== 'string'){
-            throw new TypeError("require needs a single string argument");
+            throw new TypeError("'require' needs a single string argument");
         }
         var mod =Api.require(name);
         if(mod === null){
-            throw new Error("module "+name+"does not exists");
+            throw new Error("module "+name+" does not exist");
         }
         return mod.module.exports;
     };
+    
+    Module.prototype.btoa = function (stringToConvert){
+    	if (typeof stringToConvert !== 'string'){
+            throw new TypeError("btoa needs a single string argument");
+        }
+    	return Api.btoa(stringToConvert);
+    }
+    
+    Module.prototype.atob = function (stringToConvert){
+    	if (typeof stringToConvert !== 'string'){
+            throw new TypeError("btoa needs a single string argument");
+        }
+    	return Api.atob(stringToConvert);
+    }
 
+    Module.prototype.isLoggingActive = function (){
+    	return Api.isScriptLoggingActive();
+    }
+    
+    Module.prototype.setValueInCache = function(cacheType,key,value,ttl){
+    	return Api.setValueInCache(cacheType,key,value,ttl)
+    }
+    
+    Module.prototype.getValueFromCache = function(cacheType,key){
+    	return Api.getValueFromCache(cacheType,key);
+    }
+    
+    Module.prototype.removeValueFromCache = function(cacheType,key){
+    	return Api.removeValueFromCache(cacheType,key);
+    }
+    
+
+    
     Object.defineProperty(Module.prototype,"Box",{configurable: false,enumberable:false});
     //Object.defineProperty(Module.prototype,"serve",{configurable:false,enumerable: false});
     Object.defineProperty(Module.prototype,"require",{configurable: false,enumerable: false});
 
-    // Module.prototype.Console = Object.create({
-    //    log: function(val) {
-    //        Internal.log(JSON.stringify(val));
-    //        _command({resource:'script',name:'log',params:{id: 'foo',message: val.toString()}});
-    //    }
-    //});
+    
 
 
     function ModuleRef(id,code) {

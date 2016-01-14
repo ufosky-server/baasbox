@@ -21,9 +21,7 @@ package com.baasbox.commands;
 import com.baasbox.commands.exceptions.CommandException;
 import com.baasbox.commands.exceptions.CommandParsingException;
 import com.baasbox.service.scripting.base.JsonCallback;
-import com.baasbox.service.scripting.js.Json;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 
 /**
  * Interface for commands executed from scripting languages.
@@ -40,6 +38,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 public abstract interface ScriptCommand {
     public static final String NAME= "name";
     public static final String PARAMS="params";
+    public static final String LINKS="links";
     public static final String RESOURCE = "resource";
     public static final String ID = "mod";
     public static final String MAIN="main";
