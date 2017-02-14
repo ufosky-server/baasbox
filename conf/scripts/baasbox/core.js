@@ -32,7 +32,7 @@ exports.version = __getBaasBoxVersion(); //defined in _baasbox_prelude.js
 //-------- WS (Remote API calls) --------
 
 var WS = {};
-var wsRequest = function(method,url,body,params,headers,timeout){
+var wsRequest = function(method,url,body,params,headers,timeout,attempts){
     return _command({resource: 'script',
                      name: 'ws',
                      params: {
@@ -41,29 +41,30 @@ var wsRequest = function(method,url,body,params,headers,timeout){
                          params: params,
                          headers: headers,
                          body: body,
-                         timeout:timeout
+                         timeout:timeout,
+                         attempts:attempts ? attempts :1
                      }});
 };
 
 WS.post = function(url,body,opts){
     opts =opts||{};
-    return wsRequest('post',url,body,opts.params,opts.headers,opts.timeout);
+    return wsRequest('post',url,body,opts.params,opts.headers,opts.timeout,opts.attempts);
 };
 
 WS.get = function(url,opts){
     opts=opts||{};
-    return wsRequest('get',url,null,opts.params,opts.headers,opts.timeout);
+    return wsRequest('get',url,null,opts.params,opts.headers,opts.timeout,opts.attempts);
 };
 
 WS.put = function(url,body,opts){
     opts = opts||{};
-    return wsRequest('put',url,body,opts.params,opts.headers,opts.timeout);
+    return wsRequest('put',url,body,opts.params,opts.headers,opts.timeout,opts.attempts);
 };
 
 
 WS.delete = function(url,opts){
     opts = opts||{};
-    return wsRequest('delete',url,null,opts.params,opts.headers,opts.timeout);
+    return wsRequest('delete',url,null,opts.params,opts.headers,opts.timeout,opts.attempts);
 };
 //-------- END WS --------
 
@@ -118,7 +119,7 @@ DB.rollback = function(){
 };
 
 
-DB.select = function(query,array_of_params,depth){
+DB.select = function(query,array_of_params,options){
 	if(! (typeof query === 'string')){
 		 throw new TypeError("missing query statement");
 	}
@@ -127,9 +128,11 @@ DB.select = function(query,array_of_params,depth){
     }
 	return _command({resource: 'db',
         name: 'select',
-        params: {query:query,
+        params: {
+        	query:query,
         	array_of_params:array_of_params,
-        	depth:depth
+        	depth: options ? options.depth : null,
+        	fetchPlan: options ? options.fetchPlan : null
         }
 	});
 };
@@ -535,8 +538,10 @@ var Documents = {};
 Documents.find = function(){
     var coll = null,
         q = null,
-        id = null;
+        id = null,
+    	fetchPlan = null;
     switch (arguments.length){
+    	//fall through (missing break)
         case 2:
             if(typeof arguments[1] === 'string') {
                 id = arguments[1];
@@ -555,7 +560,8 @@ Documents.find = function(){
                          name: 'list',
                          params: {
                              collection: coll,
-                             query: q
+                             query: q,
+                             fetchPlan: q.fetchPlan
                          }});
     } else {
         return _command({resource: 'documents',
@@ -659,6 +665,7 @@ var dLinks = {};
 dLinks.find = function(collectionName,id,params){
 	 var coll = collectionName,
      queryLink = params.links;
+	 fetchPlan = params.fetchPlan;
 	 if(!coll || !(typeof coll === 'string')){
 	        throw new TypeError("you must specify a collection");
 	    }
@@ -670,10 +677,11 @@ dLinks.find = function(collectionName,id,params){
          params:{
              collection: coll,
              id: id,
-             links:queryLink
+             links:queryLink,
+             fetchPlan: fetchPlan
          }});
-	 
 }
+
 Documents.Links = dLinks;
 //----- End Documents Links ------
 
@@ -844,7 +852,7 @@ Cache.set = function(key,obj,params){
 	if(params.ttl && !isNaN(params.ttl)){
 		ttl = params.ttl;
 	}
-	setValueInCache(cacheScope,key,obj,ttl);
+	setValueInCache(cacheScope,key,JSON.stringify(obj),ttl);
 	return obj;
 }
 
@@ -853,7 +861,8 @@ Cache.get = function(key,cacheScope){
 		cacheScope = 'user';
 	}
 	validateCacheParams("get",cacheScope,key);
-	return getValueFromCache(cacheScope,key);
+	var value=getValueFromCache(cacheScope,key);
+	return JSON.parse(value);
 }
 
 Cache.remove = function(key,params){
